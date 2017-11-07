@@ -32,28 +32,28 @@ public struct AnimData
 
     #endregion
 
-    public AnimData(Animation anim, Animator anim1, SkinnedMeshRenderer smr, string goName)
+    public AnimData(Animation animation, Animator animator, SkinnedMeshRenderer smr, string goName)
     {
         vertexCount = smr.sharedMesh.vertexCount;
         mapWidth = Mathf.NextPowerOfTwo(vertexCount);
-        if (anim != null)
+        if (animation != null)
         {
-            animation = anim;
-            animClips = new List<AnimationState>(anim.Cast<AnimationState>());
+            this.animation = animation;
+            animClips = new List<AnimationState>(animation.Cast<AnimationState>());
         }
         else
         {
-            animation = null;
+            this.animation = null;
             animClips = null;
         }
-        if (anim1 != null)
+        if (animator != null)
         {
-            animator = anim1;
-            animClipsInfo = anim1.runtimeAnimatorController.animationClips.ToList();
+            this.animator = animator;
+            animClipsInfo = animator.runtimeAnimatorController.animationClips.ToList();
         }
         else
         {
-            animator = null;
+            this.animator = null;
             animClipsInfo = null;
         }
 
@@ -72,12 +72,6 @@ public struct AnimData
     {
         this.animator.Play(animName);
     }
-
-    // public void SampleAnimAndBakeMesh(ref Mesh m)
-    // {
-    //     this.SampleAnim();
-    //     this.BakeMesh(ref m);
-    // }
 
     public void SampleAnim()
     {

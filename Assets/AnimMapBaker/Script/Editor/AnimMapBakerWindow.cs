@@ -8,7 +8,8 @@ using UnityEngine;
 using UnityEditor;
 using System.IO;
 
-public class AnimMapBakerWindow : EditorWindow {
+public class AnimMapBakerWindow : EditorWindow
+{
 
     private enum SaveStrategy
     {
@@ -52,13 +53,13 @@ public class AnimMapBakerWindow : EditorWindow {
 
         if (GUILayout.Button("Bake"))
         {
-            if(targetGo == null)
+            if (targetGo == null)
             {
                 EditorUtility.DisplayDialog("err", "targetGo is null！", "OK");
                 return;
             }
 
-            if(baker == null)
+            if (baker == null)
             {
                 baker = new AnimMapBaker();
             }
@@ -67,9 +68,9 @@ public class AnimMapBakerWindow : EditorWindow {
 
             List<BakedData> list = baker.Bake();
 
-            if(list != null)
+            if (list != null)
             {
-                for(int i = 0; i < list.Count; i++)
+                for (int i = 0; i < list.Count; i++)
                 {
                     BakedData data = list[i];
                     Save(ref data);
@@ -81,7 +82,7 @@ public class AnimMapBakerWindow : EditorWindow {
 
     private void Save(ref BakedData data)
     {
-        switch(stratege)
+        switch (stratege)
         {
             case SaveStrategy.AnimMap:
                 SaveAsAsset(ref data);
@@ -106,46 +107,54 @@ public class AnimMapBakerWindow : EditorWindow {
         return animMap;
     }
 
-    private Material SaveAsMat(ref BakedData data)
+    private Material[] SaveAsMat(ref BakedData data)
     {
-        if(animMapShader == null)
+        if (animMapShader == null)
         {
             EditorUtility.DisplayDialog("err", "shader is null!!", "OK");
             return null;
         }
 
-        if(targetGo == null || !targetGo.GetComponentInChildren<SkinnedMeshRenderer>())
+        if (targetGo == null || !targetGo.GetComponentInChildren<SkinnedMeshRenderer>())
         {
             EditorUtility.DisplayDialog("err", "SkinnedMeshRender is null!!", "OK");
             return null;
         }
 
         SkinnedMeshRenderer smr = targetGo.GetComponentInChildren<SkinnedMeshRenderer>();
-        Material mat = new Material(animMapShader);
-        Texture2D animMap = SaveAsAsset(ref data);
-        mat.SetTexture("_MainTex", smr.sharedMaterial.mainTexture);
-        mat.SetTexture("_AnimMap", animMap);
-        mat.SetFloat("_AnimLen", data.animLen);
+        Material[] mats = new Material[smr.sharedMaterials.Length];
+        for (int i = 0; i < smr.sharedMaterials.Length; i++)
+        {
+            Material mat = new Material(animMapShader);
+            Texture2D animMap = SaveAsAsset(ref data);
+            mat.SetTexture("_MainTex", smr.sharedMaterials[i].mainTexture);
+            mat.SetTexture("_AnimMap", animMap);
+            mat.SetFloat("_AnimLen", data.animLen);
 
-        string folderPath = CreateFolder();
-        AssetDatabase.CreateAsset(mat, Path.Combine(folderPath, data.name + ".mat"));
+            string folderPath = CreateFolder();
+            AssetDatabase.CreateAsset(mat, Path.Combine(folderPath, data.name + i + ".mat"));
 
-        return mat;
+            mats[i] = mat;
+        }
+        return mats;
     }
 
     private void SaveAsPrefab(ref BakedData data)
     {
-        Material mat = SaveAsMat(ref data);
+        Material[] mat = SaveAsMat(ref data);
 
-        if(mat == null)
+        if (mat == null)
         {
             EditorUtility.DisplayDialog("err", "mat is null!!", "OK");
             return;
         }
 
         GameObject go = new GameObject();
-        go.AddComponent<MeshRenderer>().sharedMaterial = mat;
+        go.AddComponent<MeshRenderer>().sharedMaterials = mat;
         go.AddComponent<MeshFilter>().sharedMesh = targetGo.GetComponentInChildren<SkinnedMeshRenderer>().sharedMesh;
+        go.transform.position = Vector3.zero;
+        go.transform.localScale = targetGo.transform.localScale;
+        go.transform.rotation = targetGo.GetComponentInChildren<SkinnedMeshRenderer>().gameObject.transform.rotation;
 
         string folderPath = CreateFolder();
         PrefabUtility.CreatePrefab(Path.Combine(folderPath, data.name + ".prefab").Replace("\\", "/"), go);
@@ -153,7 +162,7 @@ public class AnimMapBakerWindow : EditorWindow {
 
     private string CreateFolder()
     {
-        string folderPath = Path.Combine("Assets/" + path,  subPath);
+        string folderPath = Path.Combine("Assets/" + path, subPath);
         if (!AssetDatabase.IsValidFolder(folderPath))
         {
             AssetDatabase.CreateFolder("Assets/" + path, subPath);
