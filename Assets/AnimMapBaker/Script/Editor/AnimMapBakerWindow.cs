@@ -8,7 +8,8 @@ using UnityEngine;
 using UnityEditor;
 using System.IO;
 
-public class AnimMapBakerWindow : EditorWindow {
+public class AnimMapBakerWindow : EditorWindow
+{
 
     private enum SaveStrategy
     {
@@ -26,6 +27,13 @@ public class AnimMapBakerWindow : EditorWindow {
     private static SaveStrategy stratege = SaveStrategy.AnimMap;
     private static Shader animMapShader;
 
+    private static object[] obj;
+
+    private static int objIndex;
+    private static bool baking;
+
+    private static EditorWindow editorWindow;
+
     #endregion
 
 
@@ -34,13 +42,24 @@ public class AnimMapBakerWindow : EditorWindow {
     [MenuItem("Window/AnimMapBaker")]
     public static void ShowWindow()
     {
-        EditorWindow.GetWindow(typeof(AnimMapBakerWindow));
+        editorWindow = EditorWindow.GetWindow(typeof(AnimMapBakerWindow));
         baker = new AnimMapBaker();
-        animMapShader = Shader.Find("chenjd/AnimMapShader");
+        if (Selection.objects.Length != 0)
+        {
+            obj = Selection.objects;
+            objIndex = 0;
+        }
+
+        baking = false;
     }
 
     void OnGUI()
     {
+        if (animMapShader == null)
+            animMapShader = Shader.Find("chenjd/AnimMapShader");
+
+        if (obj != null && objIndex < obj.Length)
+            targetGo = obj[objIndex] as GameObject;
         targetGo = (GameObject)EditorGUILayout.ObjectField(targetGo, typeof(GameObject), true);
         subPath = targetGo == null ? subPath : targetGo.name;
         EditorGUILayout.LabelField(string.Format("保存路径output path:{0}", Path.Combine(path, subPath)));
@@ -49,16 +68,33 @@ public class AnimMapBakerWindow : EditorWindow {
 
         stratege = (SaveStrategy)EditorGUILayout.EnumPopup("保存策略output type:", stratege);
 
-
-        if (GUILayout.Button("Bake"))
+        if (baking || GUILayout.Button("Bake"))
         {
-            if(targetGo == null)
+            if (!AssetDatabase.IsValidFolder("Assets/" + path))
             {
+                AssetDatabase.CreateFolder("Assets", path);
+            }
+
+            if (obj != null)
+            {
+                baking = (objIndex < obj.Length);
+                if (!baking)
+                {
+                    obj = null;
+                    targetGo = null;
+                    editorWindow.Close();
+                    EditorUtility.DisplayDialog("", "批量处理结束", "OK");
+                    return;
+                }
+            }
+            if (targetGo == null)
+            {
+                editorWindow.Close();
                 EditorUtility.DisplayDialog("err", "targetGo is null！", "OK");
                 return;
             }
 
-            if(baker == null)
+            if (baker == null)
             {
                 baker = new AnimMapBaker();
             }
@@ -67,21 +103,23 @@ public class AnimMapBakerWindow : EditorWindow {
 
             List<BakedData> list = baker.Bake();
 
-            if(list != null)
+            if (list != null)
             {
-                for(int i = 0; i < list.Count; i++)
+                for (int i = 0; i < list.Count; i++)
                 {
                     BakedData data = list[i];
                     Save(ref data);
                 }
             }
+
+            objIndex += 1;
         }
     }
 
 
     private void Save(ref BakedData data)
     {
-        switch(stratege)
+        switch (stratege)
         {
             case SaveStrategy.AnimMap:
                 SaveAsAsset(ref data);
@@ -106,46 +144,54 @@ public class AnimMapBakerWindow : EditorWindow {
         return animMap;
     }
 
-    private Material SaveAsMat(ref BakedData data)
+    private Material[] SaveAsMat(ref BakedData data)
     {
-        if(animMapShader == null)
+        if (animMapShader == null)
         {
             EditorUtility.DisplayDialog("err", "shader is null!!", "OK");
             return null;
         }
 
-        if(targetGo == null || !targetGo.GetComponentInChildren<SkinnedMeshRenderer>())
+        if (targetGo == null || !targetGo.GetComponentInChildren<SkinnedMeshRenderer>())
         {
             EditorUtility.DisplayDialog("err", "SkinnedMeshRender is null!!", "OK");
             return null;
         }
 
         SkinnedMeshRenderer smr = targetGo.GetComponentInChildren<SkinnedMeshRenderer>();
-        Material mat = new Material(animMapShader);
-        Texture2D animMap = SaveAsAsset(ref data);
-        mat.SetTexture("_MainTex", smr.sharedMaterial.mainTexture);
-        mat.SetTexture("_AnimMap", animMap);
-        mat.SetFloat("_AnimLen", data.animLen);
+        Material[] mats = new Material[smr.sharedMaterials.Length];
+        for (int i = 0; i < smr.sharedMaterials.Length; i++)
+        {
+            Material mat = new Material(animMapShader);
+            Texture2D animMap = SaveAsAsset(ref data);
+            mat.SetTexture("_MainTex", smr.sharedMaterials[i].mainTexture);
+            mat.SetTexture("_AnimMap", animMap);
+            mat.SetFloat("_AnimLen", data.animLen);
+            mat.enableInstancing = true;
+            string folderPath = CreateFolder();
+            AssetDatabase.CreateAsset(mat, Path.Combine(folderPath, data.name + i + ".mat"));
 
-        string folderPath = CreateFolder();
-        AssetDatabase.CreateAsset(mat, Path.Combine(folderPath, data.name + ".mat"));
-
-        return mat;
+            mats[i] = mat;
+        }
+        return mats;
     }
 
     private void SaveAsPrefab(ref BakedData data)
     {
-        Material mat = SaveAsMat(ref data);
+        Material[] mat = SaveAsMat(ref data);
 
-        if(mat == null)
+        if (mat == null)
         {
             EditorUtility.DisplayDialog("err", "mat is null!!", "OK");
             return;
         }
 
-        GameObject go = new GameObject();
-        go.AddComponent<MeshRenderer>().sharedMaterial = mat;
+        GameObject go = new GameObject(data.name);
+        go.AddComponent<MeshRenderer>().sharedMaterials = mat;
         go.AddComponent<MeshFilter>().sharedMesh = targetGo.GetComponentInChildren<SkinnedMeshRenderer>().sharedMesh;
+        go.transform.position = Vector3.zero;
+        go.transform.localScale = targetGo.transform.localScale;
+        go.transform.rotation = targetGo.GetComponentInChildren<SkinnedMeshRenderer>().gameObject.transform.rotation;
 
         string folderPath = CreateFolder();
         PrefabUtility.CreatePrefab(Path.Combine(folderPath, data.name + ".prefab").Replace("\\", "/"), go);
@@ -153,7 +199,7 @@ public class AnimMapBakerWindow : EditorWindow {
 
     private string CreateFolder()
     {
-        string folderPath = Path.Combine("Assets/" + path,  subPath);
+        string folderPath = Path.Combine("Assets/" + path, subPath);
         if (!AssetDatabase.IsValidFolder(folderPath))
         {
             AssetDatabase.CreateFolder("Assets/" + path, subPath);
