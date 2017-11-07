@@ -20,20 +20,43 @@ public struct AnimData
 
     public int vertexCount;
     public int mapWidth;
+    private Animation animation;
+
     public List<AnimationState> animClips;
     public string name;
 
-    private  Animation animation;
     private SkinnedMeshRenderer skin;
+
+    private Animator animator;
+    public List<AnimationClip> animClipsInfo;
 
     #endregion
 
-    public AnimData(Animation anim, SkinnedMeshRenderer smr, string goName)
+    public AnimData(Animation anim, Animator anim1, SkinnedMeshRenderer smr, string goName)
     {
         vertexCount = smr.sharedMesh.vertexCount;
         mapWidth = Mathf.NextPowerOfTwo(vertexCount);
-        animClips = new List<AnimationState>(anim.Cast<AnimationState>());
-        animation = anim;
+        if (anim != null)
+        {
+            animation = anim;
+            animClips = new List<AnimationState>(anim.Cast<AnimationState>());
+        }
+        else
+        {
+            animation = null;
+            animClips = null;
+        }
+        if (anim1 != null)
+        {
+            animator = anim1;
+            animClipsInfo = anim1.runtimeAnimatorController.animationClips.ToList();
+        }
+        else
+        {
+            animator = null;
+            animClipsInfo = null;
+        }
+
         skin = smr;
         name = goName;
     }
@@ -45,24 +68,35 @@ public struct AnimData
         this.animation.Play(animName);
     }
 
-    public void SampleAnimAndBakeMesh(ref Mesh m)
+    public void AnimatorClipPlay(string animName)
     {
-        this.SampleAnim();
-        this.BakeMesh(ref m);
+        this.animator.Play(animName);
     }
 
-    private void SampleAnim()
+    // public void SampleAnimAndBakeMesh(ref Mesh m)
+    // {
+    //     this.SampleAnim();
+    //     this.BakeMesh(ref m);
+    // }
+
+    public void SampleAnim()
     {
-        if (this.animation == null)
+        if (this.animation != null)
         {
-            Debug.LogError("animation is null!!");
-            return;
+            this.animation.Sample();
         }
 
-        this.animation.Sample();
     }
 
-    private void BakeMesh(ref Mesh m)
+    public void SampleAnim(AnimationClip clip, GameObject go, float time)
+    {
+        if (this.animator != null)
+        {
+            clip.SampleAnimation(go, time);
+        }
+    }
+
+    public void BakeMesh(ref Mesh m)
     {
         if (this.skin == null)
         {
@@ -106,7 +140,8 @@ public struct BakedData
 /// <summary>
 /// 烘焙器
 /// </summary>
-public class AnimMapBaker{
+public class AnimMapBaker
+{
 
     #region 字段
 
@@ -116,48 +151,66 @@ public class AnimMapBaker{
 
     private List<BakedData> bakedDataList = new List<BakedData>();
 
+    private GameObject target;
+
     #endregion
 
     #region 方法
 
     public void SetAnimData(GameObject go)
     {
-        if(go == null)
+        if (go == null)
         {
             Debug.LogError("go is null!!");
             return;
         }
 
-        Animation anim = go.GetComponent<Animation>();
+        target = go;
+        Animation animation = go.GetComponent<Animation>();
+        Animator animator = go.GetComponent<Animator>();
         SkinnedMeshRenderer smr = go.GetComponentInChildren<SkinnedMeshRenderer>();
 
-        if(anim == null || smr == null)
+        if ((animation == null && animator == null) || smr == null)
         {
             Debug.LogError("anim or smr is null!!");
             return;
         }
         this.bakedMesh = new Mesh();
-        this.animData = new AnimData(anim, smr, go.name);
+        this.animData = new AnimData(animation, animator, smr, go.name);
     }
 
     public List<BakedData> Bake()
     {
-        if(this.animData == null)
+        if (this.animData == null)
         {
             Debug.LogError("bake data is null!!");
             return this.bakedDataList;
         }
 
         //每一个动作都生成一个动作图
-        for(int i = 0; i < this.animData.Value.animClips.Count; i++)
+        if (this.animData.Value.animClips != null)
         {
-            if(!this.animData.Value.animClips[i].clip.legacy)
+            for (int i = 0; i < this.animData.Value.animClips.Count; i++)
             {
-                Debug.LogError(string.Format("{0} is not legacy!!", this.animData.Value.animClips[i].clip.name));
-                continue;
-            }
+                if (!this.animData.Value.animClips[i].clip.legacy)
+                {
+                    this.animData.Value.animClips[i].clip.legacy = true;
+                }
 
-            BakePerAnimClip(this.animData.Value.animClips[i]);
+                BakePerAnimClip(this.animData.Value.animClips[i]);
+            }
+        }
+        if (this.animData.Value.animClipsInfo != null)
+        {
+            for (int i = 0; i < this.animData.Value.animClipsInfo.Count; i++)
+            {
+                // if (!this.animData.Value.animClipsInfo[i].legacy)
+                // {
+                //     this.animData.Value.animClipsInfo[i].legacy = true;
+                // }
+
+                BakePerAnimClip(this.animData.Value.animClipsInfo[i]);
+            }
         }
 
         return this.bakedDataList;
@@ -180,9 +233,10 @@ public class AnimMapBaker{
         {
             curAnim.time = sampleTime;
 
-            this.animData.Value.SampleAnimAndBakeMesh(ref this.bakedMesh);
+            this.animData.Value.SampleAnim();
+            this.animData.Value.BakeMesh(ref this.bakedMesh);
 
-            for(int j = 0; j < this.bakedMesh.vertexCount; j++)
+            for (int j = 0; j < this.bakedMesh.vertexCount; j++)
             {
                 Vector3 vertex = this.bakedMesh.vertices[j];
                 animMap.SetPixel(j, i, new Color(vertex.x, vertex.y, vertex.z));
@@ -193,6 +247,40 @@ public class AnimMapBaker{
         animMap.Apply();
 
         this.bakedDataList.Add(new BakedData(animMap.name, curAnim.clip.length, animMap));
+    }
+
+    private void BakePerAnimClip(AnimationClip curAnim)
+    {
+        int curClipFrame = 0;
+        float sampleTime = 0;
+        float perFrameTime = 0;
+
+        curClipFrame = Mathf.ClosestPowerOfTwo((int)(curAnim.frameRate * curAnim.length));
+        perFrameTime = curAnim.length / curClipFrame; ;
+
+        Texture2D animMap = new Texture2D(this.animData.Value.mapWidth, curClipFrame, TextureFormat.RGBAHalf, false);
+        animMap.name = string.Format("{0}_{1}.animMap", this.animData.Value.name, curAnim.name);
+        this.animData.Value.AnimatorClipPlay(curAnim.name);
+
+        for (int i = 0; i < curClipFrame; i++)
+        {
+            // curAnim.time = sampleTime;
+
+            this.animData.Value.SampleAnim(curAnim, target, sampleTime);
+            this.animData.Value.BakeMesh(ref this.bakedMesh);
+            // this.animData.Value.SampleAnimAndBakeMesh(ref this.bakedMesh);
+
+            for (int j = 0; j < this.bakedMesh.vertexCount; j++)
+            {
+                Vector3 vertex = this.bakedMesh.vertices[j];
+                animMap.SetPixel(j, i, new Color(vertex.x, vertex.y, vertex.z));
+            }
+
+            sampleTime += perFrameTime;
+        }
+        animMap.Apply();
+
+        this.bakedDataList.Add(new BakedData(animMap.name, curAnim.length, animMap));
     }
 
     #endregion
