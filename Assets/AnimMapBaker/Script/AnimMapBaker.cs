@@ -184,6 +184,7 @@ public class AnimMapBaker
         //每一个动作都生成一个动作图
         if (this.animData.Value.animClips != null)
         {
+            this.bakedDataList.Clear();
             for (int i = 0; i < this.animData.Value.animClips.Count; i++)
             {
                 if (!this.animData.Value.animClips[i].clip.legacy)
@@ -196,6 +197,7 @@ public class AnimMapBaker
         }
         if (this.animData.Value.animClipsInfo != null)
         {
+            this.bakedDataList.Clear();
             for (int i = 0; i < this.animData.Value.animClipsInfo.Count; i++)
             {
                 // if (!this.animData.Value.animClipsInfo[i].legacy)

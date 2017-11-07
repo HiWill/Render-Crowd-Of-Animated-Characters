@@ -27,6 +27,11 @@ public class AnimMapBakerWindow : EditorWindow
     private static SaveStrategy stratege = SaveStrategy.AnimMap;
     private static Shader animMapShader;
 
+    private static object[] obj;
+
+    private static int objIndex;
+    private static bool baking;
+
     #endregion
 
 
@@ -37,11 +42,20 @@ public class AnimMapBakerWindow : EditorWindow
     {
         EditorWindow.GetWindow(typeof(AnimMapBakerWindow));
         baker = new AnimMapBaker();
-        animMapShader = Shader.Find("chenjd/AnimMapShader");
+        if (Selection.objects.Length != 0)
+        {
+            obj = Selection.objects;
+            objIndex = 0;
+        }
     }
 
     void OnGUI()
     {
+        if (animMapShader == null)
+            animMapShader = Shader.Find("chenjd/AnimMapShader");
+
+        if (obj != null && objIndex < obj.Length)
+            targetGo = obj[objIndex] as GameObject;
         targetGo = (GameObject)EditorGUILayout.ObjectField(targetGo, typeof(GameObject), true);
         subPath = targetGo == null ? subPath : targetGo.name;
         EditorGUILayout.LabelField(string.Format("保存路径output path:{0}", Path.Combine(path, subPath)));
@@ -50,9 +64,19 @@ public class AnimMapBakerWindow : EditorWindow
 
         stratege = (SaveStrategy)EditorGUILayout.EnumPopup("保存策略output type:", stratege);
 
-
-        if (GUILayout.Button("Bake"))
+        if (baking || GUILayout.Button("Bake"))
         {
+            if (obj != null)
+            {
+                baking = (objIndex < obj.Length);
+                if (!baking)
+                {
+                    obj = null;
+                    targetGo = null;
+                    EditorUtility.DisplayDialog("", "批量处理结束", "OK");
+                    return;
+                }
+            }
             if (targetGo == null)
             {
                 EditorUtility.DisplayDialog("err", "targetGo is null！", "OK");
@@ -76,6 +100,8 @@ public class AnimMapBakerWindow : EditorWindow
                     Save(ref data);
                 }
             }
+
+            objIndex += 1;
         }
     }
 
@@ -130,7 +156,7 @@ public class AnimMapBakerWindow : EditorWindow
             mat.SetTexture("_MainTex", smr.sharedMaterials[i].mainTexture);
             mat.SetTexture("_AnimMap", animMap);
             mat.SetFloat("_AnimLen", data.animLen);
-
+            mat.enableInstancing = true;
             string folderPath = CreateFolder();
             AssetDatabase.CreateAsset(mat, Path.Combine(folderPath, data.name + i + ".mat"));
 
@@ -149,7 +175,7 @@ public class AnimMapBakerWindow : EditorWindow
             return;
         }
 
-        GameObject go = new GameObject();
+        GameObject go = new GameObject(data.name);
         go.AddComponent<MeshRenderer>().sharedMaterials = mat;
         go.AddComponent<MeshFilter>().sharedMesh = targetGo.GetComponentInChildren<SkinnedMeshRenderer>().sharedMesh;
         go.transform.position = Vector3.zero;
