@@ -32,6 +32,8 @@ public class AnimMapBakerWindow : EditorWindow
     private static int objIndex;
     private static bool baking;
 
+    private static EditorWindow editorWindow;
+
     #endregion
 
 
@@ -40,13 +42,15 @@ public class AnimMapBakerWindow : EditorWindow
     [MenuItem("Window/AnimMapBaker")]
     public static void ShowWindow()
     {
-        EditorWindow.GetWindow(typeof(AnimMapBakerWindow));
+        editorWindow = EditorWindow.GetWindow(typeof(AnimMapBakerWindow));
         baker = new AnimMapBaker();
         if (Selection.objects.Length != 0)
         {
             obj = Selection.objects;
             objIndex = 0;
         }
+
+        baking = false;
     }
 
     void OnGUI()
@@ -66,6 +70,11 @@ public class AnimMapBakerWindow : EditorWindow
 
         if (baking || GUILayout.Button("Bake"))
         {
+            if (!AssetDatabase.IsValidFolder("Assets/" + path))
+            {
+                AssetDatabase.CreateFolder("Assets", path);
+            }
+
             if (obj != null)
             {
                 baking = (objIndex < obj.Length);
@@ -73,12 +82,14 @@ public class AnimMapBakerWindow : EditorWindow
                 {
                     obj = null;
                     targetGo = null;
+                    editorWindow.Close();
                     EditorUtility.DisplayDialog("", "批量处理结束", "OK");
                     return;
                 }
             }
             if (targetGo == null)
             {
+                editorWindow.Close();
                 EditorUtility.DisplayDialog("err", "targetGo is null！", "OK");
                 return;
             }
